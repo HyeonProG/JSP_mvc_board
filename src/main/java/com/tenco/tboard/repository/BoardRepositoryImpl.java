@@ -46,7 +46,7 @@ public class BoardRepositoryImpl implements BoardRepository {
 			try (PreparedStatement pstmt = conn.prepareStatement(UPDATE_BOARD_SQL)) {
 				pstmt.setString(1, board.getTitle());
 				pstmt.setString(2, board.getContent());
-				pstmt.setInt(1, board.getId());
+				pstmt.setInt(3, board.getId());
 				pstmt.executeUpdate();
 				conn.commit();
 			} catch (Exception e) {

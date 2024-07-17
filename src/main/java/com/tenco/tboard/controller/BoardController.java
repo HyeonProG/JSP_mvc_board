@@ -8,22 +8,28 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.List;
 
 import com.tenco.tboard.model.Board;
+import com.tenco.tboard.model.Comment;
 import com.tenco.tboard.model.User;
 import com.tenco.tboard.repository.BoardRepositoryImpl;
+import com.tenco.tboard.repository.CommentRepositoryImpl;
 import com.tenco.tboard.repository.interfaces.BoardRepository;
+import com.tenco.tboard.repository.interfaces.CommentRepository;
 
 @WebServlet("/board/*")
 public class BoardController extends HttpServlet {
 	private static final long serialVersionUID = 1L;
 	private BoardRepository boardRepository;
+	private CommentRepository commentRepository;
        
 	@Override
 	public void init() throws ServletException {
 		// BoardRepository 추가 예정
 		boardRepository = new BoardRepositoryImpl();
+		commentRepository = new CommentRepositoryImpl();
 	}
 	
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
@@ -55,6 +61,11 @@ public class BoardController extends HttpServlet {
 			// 게시글 상세 페이지 이동 처리
 			showViewBoard(request, response, session);
 			break;
+		case "/editComment":
+			// 댓글 수정 처리
+			request.setAttribute("editCommentId", request.getParameter("commentId"));
+			showViewBoard(request, response, session);
+			break;
 		case "/deleteComment":
 			// 댓글 삭제 기능 처리
 			handleDeleteComment(request, response, session);
@@ -81,11 +92,16 @@ public class BoardController extends HttpServlet {
 			handleCreateBoard(request, response, session);
 			break;
 		case "/edit":
-
+			// 댓글 수정 처리
+			handleEditComment(request, response, session);
 			break;
-
 		case "/addComment":
-			
+			// 댓글 추가 처리
+			handleCreateComment(request, response, session);
+			break;
+		case "/update":
+			// 게시글 수정 처리
+			handleUpdateBoard(request, response, session);
 			break;
 			
 		default:
@@ -96,14 +112,110 @@ public class BoardController extends HttpServlet {
 	}
 	
 	/**
+	 * 게시글 수정 기능(POST 방식 처리)
+	 * @param request
+	 * @param response
+	 * @param session
+	 * @throws IOException 
+	 */
+	private void handleUpdateBoard(HttpServletRequest request, HttpServletResponse response, HttpSession session) throws IOException {
+		int boardId = Integer.parseInt(request.getParameter("id"));
+		String title = request.getParameter("title");
+		String content = request.getParameter("content");
+		
+		Board board = Board.builder()
+				.title(title)
+				.content(content)
+				.id(boardId)
+				.build();
+		
+		boardRepository.updateBoard(board);
+		
+		response.sendRedirect(request.getContextPath() + "/board/view?id=" + boardId);
+		
+	}
+
+	/**
+	 * 댓글 수정 기능(POST 방식 처리)
+	 * @param request
+	 * @param response
+	 * @param session
+	 * @throws IOException 
+	 */
+	private void handleEditComment(HttpServletRequest request, HttpServletResponse response, HttpSession session) throws IOException {
+		int commentId = Integer.parseInt(request.getParameter("commentId")); 
+		int boardId = Integer.parseInt(request.getParameter("boardId"));
+		String content = request.getParameter("content");
+		
+		try {
+			
+			User user = (User) session.getAttribute("principal");
+			
+			Comment comment = Comment.builder()
+					.content(content)
+					.id(commentId)
+					.userId(user.getId())
+					.build();
+			
+			commentRepository.updateComment(comment);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		response.sendRedirect(request.getContextPath() + "/board/view?id=" + boardId);
+	}
+
+	/**
+	 * 댓글 추가 기능(POST 방식 처리)
+	 * @param request
+	 * @param response
+	 * @param session
+	 * @throws IOException 
+	 */
+	private void handleCreateComment(HttpServletRequest request, HttpServletResponse response, HttpSession session) throws IOException {
+		String content = request.getParameter("content");
+		User user = (User) session.getAttribute("principal");
+		int boardId = Integer.parseInt(request.getParameter("boardId"));
+		
+		Comment comment = Comment.builder()
+				.boardId(boardId)
+				.userId(user.getId())
+				.content(content)
+				.build();
+		
+		commentRepository.addComment(comment);
+		
+		response.sendRedirect(request.getContextPath() + "/board/view?id=" + boardId);
+		
+	}
+
+	/**
 	 * 댓글 삭제 기능(GET 방식 처리)
 	 * @param request
 	 * @param response
 	 * @param session
+	 * @throws IOException 
 	 */
-	private void handleDeleteComment(HttpServletRequest request, HttpServletResponse response, HttpSession session) {
-		// TODO Auto-generated method stub
-		
+	private void handleDeleteComment(HttpServletRequest request, HttpServletResponse response, HttpSession session) throws IOException {
+		 try {
+		        int commentId = Integer.parseInt(request.getParameter("id"));
+		        int boardId = Integer.parseInt(request.getParameter("board_id"));
+
+		        // 현재 로그인한 사용자의 ID
+		        User user = (User) session.getAttribute("principal");
+
+		        // 댓글 정보 가져오기
+		        Comment comment = commentRepository.getCommentById(commentId);
+
+		        if (comment != null && comment.getUserId() == user.getId()) {
+		            commentRepository.deleteComment(commentId);
+		            response.sendRedirect(request.getContextPath() + "/board/view?id=" + boardId);
+		        } else {
+		            // 유효하지 않은 접근
+		            response.sendRedirect(request.getContextPath() + "/board/view?id=" + boardId + "&error=invalid");
+		        }
+		    } catch (Exception e) {
+		        e.printStackTrace();
+		    }
 	}
 	
 	/**
@@ -111,27 +223,32 @@ public class BoardController extends HttpServlet {
 	 * @param request
 	 * @param response
 	 * @param session
+	 * @throws IOException 
 	 */
-	private void showViewBoard(HttpServletRequest request, HttpServletResponse response, HttpSession session) {
+	private void showViewBoard(HttpServletRequest request, HttpServletResponse response, HttpSession session) throws IOException {
 		try {
-			int id = Integer.parseInt(request.getParameter("id"));
-			Board board = boardRepository.getBoardById(id);
+			int boardId = Integer.parseInt(request.getParameter("id"));
+			Board board = boardRepository.getBoardById(boardId);
 			if (board == null) {
 				response.sendError(HttpServletResponse.SC_NOT_FOUND);
 				return;
-			}
-			request.setAttribute("board", board);
-			
+			}			
 			// 현재 로그인한 사용자의 ID
 			User user = (User) session.getAttribute("principal");
 			if (user != null) {
 				request.setAttribute("userId", user.getId());
 			}
 			
-			// TODO 댓글 조회 및 권한 확인 추가 예정
+			// 댓글 조회 및 권한 확인 추가
+			List<Comment> commentList = commentRepository.getCommentsByBoardId(boardId);
+			
+			request.setAttribute("board", board);
+			request.setAttribute("commentList", commentList);
 			request.getRequestDispatcher("/WEB-INF/views/board/view.jsp").forward(request, response);
 		} catch (Exception e) {
-			// 잘못된 접근입니다. back();
+			response.setContentType("text/html; charset=UTF-8");
+			PrintWriter out = response.getWriter();
+			out.println("<script> alert('잘못된 요청입니다'); history.back(); </script>");
 		}
 	}
 	
@@ -140,9 +257,18 @@ public class BoardController extends HttpServlet {
 	 * @param request
 	 * @param response
 	 * @param session
+	 * @throws IOException 
+	 * @throws ServletException 
 	 */
-	private void showEditBoardForm(HttpServletRequest request, HttpServletResponse response, HttpSession session) {
-		// TODO Auto-generated method stub
+	private void showEditBoardForm(HttpServletRequest request, HttpServletResponse response, HttpSession session) throws IOException, ServletException {
+		
+		int boardId = Integer.parseInt(request.getParameter("id"));
+		
+		Board board = boardRepository.getBoardById(boardId);
+		
+		request.setAttribute("board", board);
+		request.getRequestDispatcher("/WEB-INF/views/board/update.jsp").forward(request, response);
+		
 		
 	}
 	
@@ -153,6 +279,22 @@ public class BoardController extends HttpServlet {
 	 * @param session
 	 */
 	private void handleDeleteBoard(HttpServletRequest request, HttpServletResponse response, HttpSession session) {
+		
+		try {
+	        int boardId = Integer.parseInt(request.getParameter("id"));
+	        Board board = boardRepository.getBoardById(boardId);
+	        // 현재 로그인한 사용자의 ID
+	        User user = (User) session.getAttribute("principal");
+	        if (board.getUserId() == user.getId()) {
+	            boardRepository.deleteBoard(boardId);
+	            response.sendRedirect(request.getContextPath() + "/board/list?page=1");
+	        } else {
+	            // 유효하지 않은 접근
+	            response.sendRedirect(request.getContextPath() + "/board/view?id=" + boardId + "&error=invalid");
+	        }
+	    } catch (Exception e) {
+	        e.printStackTrace();
+	    }
 		
 	}
 	
